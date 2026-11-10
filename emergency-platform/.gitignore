@@ -1,2 +1,8 @@
 .db
 uploads/
+node_modules/
+.env
+.env.*
+*.db
+dist/
+.DS_Store
