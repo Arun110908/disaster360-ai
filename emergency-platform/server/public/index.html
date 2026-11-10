@@ -1,0 +1,92 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Disaster360 Ops Console</title><link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>body{margin:0;font:15px system-ui;background:#0b1b3a;color:#e8eefc}header{padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:18px;margin:0;flex:1}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;padding:12px}
+section{background:#fff;color:#12203f;border-radius:10px;padding:12px}section.dark{background:#13264d;color:#e8eefc}h2{font-size:15px;margin:0 0 8px}
+#map{height:340px;border-radius:8px}button,input,select,textarea{font:inherit;padding:6px 8px;border-radius:6px;border:1px solid #8aa}button{background:#c62828;color:#fff;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #ffb300}.row{padding:6px 0;border-bottom:1px solid #dde}.Critical{color:#c62828;font-weight:700}.High{color:#e65100}
+#banner{padding:8px 16px;font-weight:600}.off{background:#ffb300;color:#000}.demo{background:#1565c0;color:#fff;padding:2px 6px;border-radius:4px;font-size:12px}pre{white-space:pre-wrap}label{display:block;margin:4px 0}</style></head><body>
+<header><h1>Disaster360 Ops Console <span class="demo">Resources, hospitals, shelters = DEMO DATA</span></h1>
+<select id="lang" aria-label="language"><option value="en">English</option><option value="ta">தமிழ்</option></select><input id="u" placeholder="username" aria-label="username" size="9"><input id="p" type="password" placeholder="password" aria-label="password" size="9"><button id="login">Log in</button></header>
+<div id="banner" role="status"></div><div id="alerts" role="alert"></div>
+<main>
+<section style="grid-column:1/-1"><h2 data-i="map">Live map</h2><div id="map"></div><small>Red = critical, orange = high, blue = other incidents; squares = demo units, hospitals, shelters.</small></section>
+<section><h2>Incidents (most severe first)</h2><div id="inc">Log in as staff to load.</div><pre id="rec"></pre></section>
+<section class="dark"><h2>AI Copilot (answers from stored data only)</h2><input id="q" placeholder="e.g. Which reports need verification?" style="width:70%" aria-label="question"><button id="ask">Ask</button><pre id="ans"></pre></section>
+<section><h2>What-if simulator <span class="demo">HYPOTHETICAL</span></h2><select id="sc" aria-label="scenario"><option value="flood">Flood</option><option value="fire">Fire</option><option value="accidents">Road accidents</option><option value="collapse">Building collapse</option><option value="multi">Simultaneous incidents</option></select>
+<input id="k" type="number" min="0.5" max="5" step="0.5" value="1" aria-label="intensity" style="width:70px"><button id="sim">Simulate</button><pre id="simout"></pre></section>
+<section><h2 data-i="report">Report an emergency (works offline)</h2><label><span data-i="title">Title</span><input id="t" style="width:100%"></label><label><span data-i="desc">Description</span><textarea id="d" style="width:100%"></textarea></label>
+<label><span data-i="cat">Category</span><select id="c"><option>fire</option><option>accident</option><option>medical</option><option>flood</option><option>collapse</option><option>other</option></select></label>
+<label><span data-i="loc">Location</span><input id="l" style="width:100%"></label><label><span data-i="ppl">People affected</span><input id="n" type="number" min="0" value="1"></label><button id="send" data-i="submit">Submit</button> <button id="mic" type="button" data-i="mic">Speak</button> <input id="img" type="file" accept="image/jpeg,image/png" aria-label="photo"><small id="micmsg"></small><pre id="qs"></pre></section>
+<section style="grid-column:1/-1"><h2>Digital twin (2D) <span class="demo">live data + optional HYPOTHETICAL overlay</span></h2><svg id="twin" viewBox="0 0 700 300" style="width:100%;background:#eef3fb;border-radius:8px" role="img" aria-label="2D city twin"></svg>
+<small>Circles = incidents, squares = units, triangles = shelters, plus = hospitals. Dashed red ring = simulation (not real). Run the simulator to draw it.</small></section>
+<section><h2>Hospitals</h2><div id="hosp">Log in to load.</div><label>Hospital id <input id="hid" type="number" style="width:70px"></label><label>Free beds <input id="hbeds" type="number" min="0" style="width:70px"></label><button id="hup">Update beds</button>
+<hr><b>Register hospital</b><input id="hn" placeholder="name" aria-label="hospital name"><input id="ht" type="number" placeholder="total beds" style="width:90px"><button id="hreg">Register</button></section>
+<section><h2>Shelters</h2><div id="shl">Log in to load.</div><b>Register shelter</b><input id="sn" placeholder="name" aria-label="shelter name"><input id="sc2" type="number" placeholder="capacity" style="width:90px"><button id="sreg">Register</button></section>
+<section><h2>Early warning</h2><button id="wx">Check rainfall forecast (Chengalpattu)</button><pre id="wxo"></pre><small>Forecast is unverified. Drafting an alert does NOT notify anyone; the public sees it only after you publish.</small><div id="drafts"></div></section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let tok=sessionStorage.getItem('tok')||'';
+const api=async(m,p,b)=>{const r=await fetch('/api'+p,{method:m,headers:{'Content-Type':'application/json',...(tok?{Authorization:'Bearer '+tok}:{})},body:b?JSON.stringify(b):undefined});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.status);return j;};
+let map=window.L?L.map('map').setView([12.75,80.02],10):null;if(map){L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(map);}else $('map').textContent='Map library unavailable (offline). Data panels still work.';
+let layer=map&&L.layerGroup().addTo(map);
+async function load(){try{const [m,s]=await Promise.all([api('GET','/map'),api('GET','/incidents')]);
+  if(layer){layer.clearLayers();const dot=(x,col,sq,txt)=>L.circleMarker([x.lat,x.lng],{radius:sq?6:9,color:col,fillOpacity:.8}).bindPopup(esc(txt)).addTo(layer);
+   m.incidents.forEach(i=>dot(i,i.severity=='Critical'?'#c62828':i.severity=='High'?'#e65100':'#1565c0',0,`#${i.id} ${i.title} (${i.severity}, ${i.status})`));
+   m.resources.forEach(r=>dot(r,'#2e7d32',1,`${r.name} [${r.status}] DEMO`));m.hospitals.forEach(h=>dot(h,'#6a1b9a',1,`${h.name}: ${h.beds_free} beds free DEMO`));m.shelters.forEach(h=>dot(h,'#00838f',1,`${h.name}: ${h.occupancy}/${h.capacity} DEMO`));}
+  $('inc').innerHTML=s.slice(0,12).map(i=>`<div class="row"><span class="${i.severity}">${esc(i.severity)}</span> #${i.id} ${esc(i.title)}<br><small>${esc(i.location)} - ${esc(i.status)}</small><br>
+   <button data-a="rec" data-i="${i.id}">Recommend</button> <button data-a="ver" data-i="${i.id}">Verify</button></div>`).join('');}catch(e){$('inc').textContent='Could not load: '+e.message;}}
+$('inc').onclick=async e=>{const b=e.target.closest('button');if(!b)return;const id=b.dataset.i;try{
+  if(b.dataset.a=='ver'){await api('POST',`/incidents/${id}/verify`);load();return}
+  const r=await api('GET',`/incidents/${id}/recommend`);$('rec').innerHTML=esc(r.note)+'\n'+r.units.map(u=>`${esc(u.name)} ${u.distanceKm??'?'}km <button data-a="asg" data-i="${id}" data-r="${u.id}">Dispatch (simulated)</button>`).join('\n')+'\nHospital: '+esc(r.hospital?.name||'-')+'\nShelter: '+esc(r.shelter?.name||'-');}catch(e){$('rec').textContent=e.message}};
+$('rec').onclick=async e=>{const b=e.target.closest('button');if(!b)return;try{const r=await api('POST',`/incidents/${b.dataset.i}/assign`,{resourceId:+b.dataset.r});$('rec').textContent=r.note;load();}catch(e){$('rec').textContent=e.message}};
+$('login').onclick=async()=>{try{const r=await api('POST','/auth/login',{username:$('u').value,password:$('p').value});tok=r.token;sessionStorage.setItem('tok',tok);load();}catch(e){alert(e.message)}};
+$('ask').onclick=async()=>{try{const r=await api('POST','/copilot',{question:$('q').value});$('ans').textContent=r.answer+'\n'+JSON.stringify(r.data,null,1).slice(0,1500);}catch(e){$('ans').textContent=e.message}};
+$('sim').onclick=async()=>{try{$('simout').textContent=JSON.stringify(await api('POST','/simulate',{scenario:$('sc').value,intensity:+$('k').value}),null,1)}catch(e){$('simout').textContent=e.message}};
+// Offline queue: reports stay "NOT SENT" until /api/sync confirms each one.
+const Q='d360-queue',getQ=()=>JSON.parse(localStorage.getItem(Q)||'[]'),setQ=q=>localStorage.setItem(Q,JSON.stringify(q));
+function show(){const q=getQ();$('qs').textContent=q.length?q.map(r=>`${r.title}: ${r.state||'NOT SENT - saved on this device only'}`).join('\n'):'No pending reports.';
+  $('banner').className=navigator.onLine?'':'off';$('banner').textContent=navigator.onLine?'':'Offline: data shown may be stale. Reports are saved locally and have NOT reached authorities.';}
+async function flush(){const q=getQ();if(!q.length||!navigator.onLine)return;try{const {results}=await api('POST','/sync',{reports:q});
+  const by=Object.fromEntries(results.map(r=>[r.clientId,r]));setQ(q.filter(r=>!['received','already_received'].includes(by[r.clientId]?.status)).map(r=>({...r,state:by[r.clientId]?.status=='rejected'?'REJECTED: '+Object.values(by[r.clientId].errors).join('; '):r.state})));}catch{}show();}
+$('send').onclick=()=>{const q=getQ();q.push({clientId:crypto.randomUUID(),title:$('t').value,description:$('d').value,category:$('c').value,location:$('l').value,peopleAffected:+$('n').value});setQ(q);show();flush();};
+addEventListener('online',()=>{show();flush();load()});addEventListener('offline',()=>show());setInterval(flush,30000);show();flush();if(tok)load();
+
+const TA={map:'நேரடி வரைபடம்',report:'அவசரநிலையைப் புகாரளிக்கவும் (இணைப்பின்றியும் வேலை செய்யும்)',title:'தலைப்பு',desc:'விவரம்',cat:'வகை',loc:'இடம்',ppl:'பாதிக்கப்பட்டவர்கள்',submit:'சமர்ப்பிக்கவும்',mic:'பேசுங்கள்'};
+const EN={};document.querySelectorAll('[data-i]').forEach(e=>EN[e.dataset.i]=e.textContent);
+$('lang').onchange=()=>{const t=$('lang').value=='ta';document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t?TA[e.dataset.i]:EN[e.dataset.i]);show();};
+const OFFTA='இணைப்பு இல்லை: தரவு பழையதாக இருக்கலாம். புகார்கள் இந்த சாதனத்தில் மட்டுமே சேமிக்கப்பட்டுள்ளன; அதிகாரிகளுக்கு இன்னும் சென்றடையவில்லை.';
+const _show=show;show=function(){_show();if(!navigator.onLine&&$('lang').value=='ta')$('banner').textContent=OFFTA;};
+$('mic').onclick=()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('micmsg').textContent='Voice input is not supported in this browser.';return}
+  const r=new SR();r.lang=$('lang').value=='ta'?'ta-IN':'en-IN';r.onresult=e=>{$('d').value=(($('d').value+' ')+e.results[0][0].transcript).trim()};r.onerror=e=>{$('micmsg').textContent='Voice error: '+e.error+' (needs internet in most browsers)'};$('micmsg').textContent='Listening...';r.start();};
+async function twin(m,sim){const svg=$('twin'),pts=[...m.incidents,...m.resources,...m.hospitals,...m.shelters].filter(p=>p.lat!=null);if(!pts.length){svg.innerHTML='';return}
+  const la=pts.map(p=>p.lat),lo=pts.map(p=>p.lng),a=Math.min(...la),b=Math.max(...la),c=Math.min(...lo),d=Math.max(...lo);
+  const X=p=>30+(p.lng-c)/((d-c)||1)*640,Y=p=>270-(p.lat-a)/((b-a)||1)*240;let h='';
+  m.shelters.forEach(p=>h+=`<path d="M${X(p)},${Y(p)-8}l8,14h-16z" fill="#00838f"><title>${esc(p.name)} ${p.occupancy}/${p.capacity}</title></path>`);
+  m.hospitals.forEach(p=>h+=`<text x="${X(p)}" y="${Y(p)+6}" font-size="20" fill="#6a1b9a" text-anchor="middle">+<title>${esc(p.name)}</title></text>`);
+  m.resources.forEach(p=>h+=`<rect x="${X(p)-5}" y="${Y(p)-5}" width="10" height="10" fill="${p.status=='available'?'#2e7d32':'#9e9e9e'}"><title>${esc(p.name)} ${p.status}</title></rect>`);
+  m.incidents.forEach(p=>h+=`<circle cx="${X(p)}" cy="${Y(p)}" r="${p.severity=='Critical'?10:7}" fill="${p.severity=='Critical'?'#c62828':p.severity=='High'?'#e65100':'#1565c0'}" fill-opacity=".8"><title>#${p.id} ${esc(p.title)}</title></circle>`);
+  if(sim){const cx=350,cy=150,r=30+Math.min(sim.peopleAffected,400)/4;h+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#c62828" stroke-dasharray="6 4" stroke-width="3"/><text x="${cx}" y="${cy}" text-anchor="middle" fill="#c62828" font-size="12">SIMULATION: ${esc(sim.scenario)} (hypothetical)</text>`;}
+  svg.innerHTML=h;}
+const _sim=$('sim').onclick;$('sim').onclick=async()=>{try{const r=await api('POST','/simulate',{scenario:$('sc').value,intensity:+$('k').value});$('simout').textContent=JSON.stringify(r,null,1);twin(window.lastMap,r);}catch(e){$('simout').textContent=e.message}};
+const _load=load;load=async function(){await _load();try{const m=await api('GET','/map');window.lastMap=m;twin(m);
+  const [h,sh]=await Promise.all([api('GET','/hospitals'),api('GET','/shelters')]);
+  $('hosp').innerHTML=h.map(x=>`<div class="row">#${x.id} ${esc(x.name)}: ${x.beds_free}/${x.beds_total} beds free ${x.is_demo?'<span class="demo">DEMO</span>':'(updated '+esc(x.updated_at.slice(0,16))+')'}</div>`).join('');
+  $('shl').innerHTML=sh.map(x=>`<div class="row">#${x.id} ${esc(x.name)}: ${x.occupancy}/${x.capacity} ${x.capacity_alert?'<b class="Critical">CAPACITY ALERT</b>':''} ${x.is_demo?'<span class="demo">DEMO</span>':''}</div>`).join('');
+  const al=await api('GET','/alerts/all');$('drafts').innerHTML=al.map(x=>`<div class="row">${esc(x.status)}: ${esc(x.area)} - ${esc(x.message)} <button data-al="${x.id}" data-st="${x.status=='Published'?'Withdrawn':'Published'}">${x.status=='Published'?'Withdraw':'Publish'}</button></div>`).join('');}catch{}
+  try{const p=await api('GET','/alerts');$('alerts').innerHTML=p.map(x=>`<div class="off">ALERT (${esc(x.level)}) ${esc(x.area)}: ${esc(x.message)} <small>Source: ${esc(x.source)}</small></div>`).join('');}catch{}};
+$('hup').onclick=async()=>{try{await api('PATCH','/hospitals/'+$('hid').value,{bedsFree:+$('hbeds').value});load()}catch(e){alert(e.message)}};
+$('hreg').onclick=async()=>{try{await api('POST','/hospitals',{name:$('hn').value,bedsTotal:+$('ht').value,bedsFree:+$('ht').value});load()}catch(e){alert(e.message)}};
+$('sreg').onclick=async()=>{try{await api('POST','/shelters',{name:$('sn').value,capacity:+$('sc2').value});load()}catch(e){alert(e.message)}};
+$('wx').onclick=async()=>{try{const w=await api('GET','/weather');$('wxo').textContent=`${w.level}: ${w.next24hMm} mm in 24h\nSource: ${w.source} (UNVERIFIED forecast)`;
+  if(w.next24hMm>=64.5&&confirm('Create a DRAFT alert from this forecast? It will not be public until you publish it.')){await api('POST','/alerts',{area:'Chengalpattu',level:w.level,message:`${w.level} (${w.next24hMm} mm forecast in 24h). Stay alert; await official guidance.`,source:'Open-Meteo forecast (unverified), admin reviewed'});load();}}catch(e){$('wxo').textContent=e.message}};
+$('drafts').onclick=async e=>{const b=e.target.closest('button');if(!b)return;try{await api('PATCH','/alerts/'+b.dataset.al,{status:b.dataset.st});load()}catch(x){alert(x.message)}};
+// Photo upload after a report is received: attach to the newest synced incident id when known.
+$('img').onchange=async()=>{const f=$('img').files[0];if(!f)return;if(f.size>2e6){alert('Max 2 MB');return}localStorage.setItem('d360-pending-img-note','Photo selected; attach it to an incident id after the report syncs.');
+  const id=prompt('Incident id to attach this photo to (after your report is received):');if(!id)return;try{const r=await fetch('/api/incidents/'+encodeURIComponent(id)+'/images',{method:'POST',headers:{'Content-Type':f.type},body:f});const j=await r.json();alert(r.ok?j.note:j.error)}catch{alert('Upload failed (offline?)')}};
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+</script></body></html>
