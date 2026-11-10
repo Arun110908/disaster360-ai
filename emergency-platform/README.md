@@ -194,3 +194,5 @@ Log in as `admin`. Without `SEED_ADMIN_PASSWORD` a random password is printed on
 ## 10. Testing
 
 Server logic was tested against real SQLite (permissions, validation, duplicate and sync idempotency, simulator writes nothing, upload checks) and the `/ops/` console in a headless browser with a mocked API. Not yet run against live Express, live Open-Meteo or real map tiles; do a quick smoke test after deploying.
+
+**Live demo:** https://disaster360-ai.onrender.com
