@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: disaster360-ai
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: AUTH_ENFORCE
+        value: "true"
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: SEED_ADMIN_PASSWORD
+        sync: false

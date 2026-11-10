@@ -1,8 +1,7 @@
-.db
-uploads/
 node_modules/
-.env
-.env.*
+client/node_modules/
+client/dist/
 *.db
-dist/
-.DS_Store
+*.db-*
+server/uploads/
+.env

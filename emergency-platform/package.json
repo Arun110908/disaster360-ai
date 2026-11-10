@@ -6,8 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node --no-warnings server/index.js",
-    "build": "npm --prefix client run build",
-    "setup": "npm install && npm --prefix client install && npm run build",
+    "build": "npm --prefix client install --include=dev && npm --prefix client run build",
+    "setup": "npm install && npm run build",
     "dev": "node --no-warnings --watch server/index.js",
     "dev:client": "npm --prefix client run dev"
   },
@@ -18,5 +18,8 @@
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

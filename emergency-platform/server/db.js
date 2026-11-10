@@ -1,11 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { classifySeverity } from './severity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbFile = process.env.DB_FILE || path.join(__dirname, 'incidents.db');
 
+fs.mkdirSync(path.dirname(dbFile), { recursive: true });
 export const db = new DatabaseSync(dbFile);
 
 db.exec(`
